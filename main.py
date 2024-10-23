@@ -23,7 +23,7 @@ OUTPUT = 1
 PIN_TO_PWM = 6
 MIN_PULSE = 5    # 1ms pulse width (~5% duty cycle of 20ms)
 MAX_PULSE = 25   # 2ms pulse width (~10% duty cycle of 20ms)
-ROTATION_DELAY = 0.5 
+ROTATION_DELAY = 2 
 
 # Setup WiringPi
 wiringpi.wiringPiSetup()

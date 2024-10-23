@@ -1,24 +1,25 @@
-import wiringpi
 import cv2
 import time
 import numpy as np
-# Constants
+import wiringpi
 
+# Camera calibration parameters
 camera_matrix = np.array([[1.36173853e+03, 0.00000000e+00, 9.07939104e+02],
                           [0.00000000e+00, 1.35749773e+03, 5.49729293e+02],
                           [0.00000000e+00, 0.00000000e+00, 1.00000000e+00]])
 
 # Distortion coefficients
 dist_coeffs = np.array([[-0.20485858, -0.16969606, -0.00192307, 0.00045057, 0.14444974]])
+
+# Function to undistort the frames
 def undistorter(img):
     h, w = img.shape[:2]
     new_camera_matrix, roi = cv2.getOptimalNewCameraMatrix(camera_matrix, dist_coeffs, (w, h), 1, (w, h))
-    # Undistort
+    # Undistort the image
     dst = cv2.undistort(img, camera_matrix, dist_coeffs, None, new_camera_matrix)
-    x, y, w, h = roi
-    #undistorted_cropped_img = dst[y:y+h, x:x+w]
     return dst
 
+# Servo control setup
 OUTPUT = 1
 PIN_TO_PWM = 6
 MIN_PULSE = 5    # 1ms pulse width (~5% duty cycle of 20ms)
@@ -45,52 +46,39 @@ def move_servo(current_angle, target_angle, increment=1, delay=0.05):
             wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
             time.sleep(delay)  # Slow down the movement by adding a delay
 
-
-def capture_frames(n):
-    if n <= 0:
-        print("Invalid input. n must be greater than 0.")
-        return []
-
+# Capture and record video
+def capture_video(filename, duration=10, fps=20):
     camera = cv2.VideoCapture(1)
     if not camera.isOpened():
         print("Error: Could not open camera.")
-        return []
+        return
 
-    frames = []
-    step_angle = 180 / n  # Calculate the rotation step per capture
-    current_angle = 0  # Start from 0 degrees
+    # Define the codec and create a VideoWriter object for MP4
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    frame_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out = cv2.VideoWriter(filename, fourcc, fps, (frame_width, frame_height))
 
-    # Rotate the servo and capture images n times
-    for i in range(n):
-        target_angle = i * step_angle  # Increment the target angle for each iteration
-        move_servo(current_angle, target_angle, increment=1, delay=0.1)  # Adjust increment and delay for smooth movement
-        time.sleep(ROTATION_DELAY)  # Delay to allow the camera to stabilize
+    current_angle = 0
+    target_angle = 180  # Rotate from 0 to 180 degrees
 
-        # Capture a frame from the camera
-        for _ in range(4):
-            camera.read()
+    start_time = time.time()
 
+    while time.time() - start_time < duration:
+        # Capture the frame
         ret, frame = camera.read()
-        frame = undistorter(frame)
         if ret:
-            frames.append(frame)
-        else:
-            print(f"Failed to capture frame at angle {target_angle} degrees.")
+            frame = undistorter(frame)
+            out.write(frame)
 
-        current_angle = target_angle  # Update current_angle after each move
+        # Move the servo while capturing video
+        move_servo(current_angle, target_angle, increment=1, delay=0.1)
+        current_angle = target_angle
 
-    # Return the list of captured frames
+    # Release everything when done
     camera.release()
-    return frames
+    out.release()
+    print(f"Video saved to {filename}")
 
-stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
-
-def stitch(frames):
-    status, panorama = stitcher.stitch(frames)
-    if status == cv2.Stitcher_OK:
-        cv2.imwrite('panorama.jpg', panorama)
-    else :
-        print("what na")
-    
-frames = capture_frames(4)
-stitch(frames)
+# Example usage
+capture_video('panorama_video.mp4', duration=20, fps=20)

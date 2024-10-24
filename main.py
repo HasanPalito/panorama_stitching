@@ -6,9 +6,14 @@ import wiringpi
 import math
 import brisque
 
+obj = brisque.BRISQUE(url=False)
 
-#pip install brisque  
-
+def eval(frame):
+    cv2_rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    ndarray = np.asarray(cv2_rgb_image)
+    return obj.score(img=ndarray)
+    
+    
 # Thread function to capture video and store frames
 captured_frames = [] 
 # Camera calibration parameters
@@ -69,7 +74,7 @@ def move_servo(current_angle, target_angle, steps=100, duration=5):
     wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
 
 # Thread function to capture video
-def capture_video_thread(filename, duration=10, fps=20):
+def capture_image():
     global captured_frames  
     cap = cv2.VideoCapture(1)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
@@ -81,106 +86,27 @@ def capture_video_thread(filename, duration=10, fps=20):
     if not cap.isOpened():
         print("Error: Could not open camera.")
         return
-
-    # Define the codec and create a VideoWriter object for MP4
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out = cv2.VideoWriter(filename, fourcc, fps, (frame_width, frame_height))
-
-    start_time = time.time()
-    global total_frames
-
-    # Capture video for the specified duration
-    while time.time() - start_time < duration:
+    for i in range(5):  # Flush 5 frames (adjust as needed)
         ret, frame = cap.read()
-        if ret:
-            #frame = undistorter(frame)
-            out.write(frame)
-            captured_frames.append(frame)          
-            total_frames += 1
-            print(f"Captured frame {total_frames}")
-        else:
-            print("Failed to capture frame")
+    ret, frame = cap.read()
+    if ret :
+        if eval(frame) < 15 : 
+            dst = cv2.fastNlMeansDenoisingColored(frame,None,10,10,7,21)
+            return dst
 
-    cap.release()
-    out.release()
-    print(f"Video saved to {filename}. Total frames captured: {total_frames}")
-    return total_frames
-
-def calculate_blurriness(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-    return laplacian_var
-
- 
-
-# Function to run both servo movement and video capture
-def run_servo_and_video():
-    # Thread to capture video
-    video_thread = threading.Thread(target=capture_video_thread, args=('panorama_video.mp4', 10, 20))
-    
-    # Start the video capture thread
-    video_thread.start()
-
-    # Move the servo while video is being captured
-    current_angle = 0
-    target_angle = 180  # Rotate from 0 to 180 degrees
-    move_servo(current_angle, target_angle, increment=30, delay=0.05)
-
-    # Wait for the video thread to complete
-    video_thread.join()
-
-def find_least_blurry_image_in_range(n, m):
-    global captured_frames
-
-    if not captured_frames:
-        print("No frames captured.")
-        return None
-
-    if n < 0 or m > len(captured_frames) or n >= m:
-        print(f"Invalid range: n={n}, m={m}, total_frames={len(captured_frames)}")
-        return None
-
-    best_frame = None
-    lowest_blurriness = float('inf')
-
-    # Iterate through the specified range of frames to find the least blurry one
-    for i in range(n, m):
-        frame = captured_frames[i]
-        blurriness = calculate_blurriness(frame)
-        print(f"Frame {i + 1} blurriness: {blurriness}")
-
-        if blurriness < lowest_blurriness:
-            lowest_blurriness = blurriness
-            best_frame = frame
-
-    if best_frame is not None:
-#        best_frame = sharpen_image(best_frame)
-        return best_frame
-        cv2.imwrite(f"least_blurry_image_n{n}_m{m}.jpg", best_frame)
-        print(f"Saved the least blurry image from frames {n} to {m} with blurriness {lowest_blurriness}")
-    else:
-        print(f"No valid frame to save from the range {n}:{m}.")
-
-
-# Example usage
-
-def find_n_image(n):
-    best_frames=[]
-    step = int(total_frames/n)
-    for i in range (0,total_frames,step):
-        best_frame= find_least_blurry_image_in_range(i, i+step)
-        best_frames.append(best_frame)
-        cv2.imwrite(f"{i}.jpg",best_frame)
-    return best_frames
-
-run_servo_and_video()
-list_of_best_frames = find_n_image(5)
+for i in range (0,180,30):
+    frame = capture_image()
+    cv2.imwrite(f"{i}.jpg",frame)
+    move_servo(i)
+    captured_frames.append(frame)
 
 stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
-status, panorama = stitcher.stitch(list_of_best_frames)
+status, panorama = stitcher.stitch(captured_frames)
 if status == cv2.Stitcher_OK:
     cv2.imwrite('panorama.jpg', panorama)
 else : 
     print("woelah rek")
+    
+
+    
+ 

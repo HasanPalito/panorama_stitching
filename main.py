@@ -19,12 +19,25 @@ def undistorter(img):
     dst = cv2.undistort(img, camera_matrix, dist_coeffs, None, new_camera_matrix)
     return dst
 
+def sharpen_image(image):
+    # Define a sharpening kernel
+    sharpening_kernel = np.array([[ 0, -1,  0],
+                                  [-1,  5, -1],
+                                  [ 0, -1,  0]])
+    
+    # Apply the sharpening filter using cv2.filter2D
+    sharpened_image = cv2.filter2D(image, -1, sharpening_kernel)
+    
+    return sharpened_image
+
 # Servo control setup
 OUTPUT = 1
 PIN_TO_PWM = 6
 MIN_PULSE = 5    # 1ms pulse width (~5% duty cycle of 20ms)
 MAX_PULSE = 25   # 2ms pulse width (~10% duty cycle of 20ms)
-ROTATION_DELAY = 2 
+ROTATION_DELAY = 2
+
+total_frames= 0
 
 # Setup WiringPi
 wiringpi.wiringPiSetup()
@@ -58,7 +71,7 @@ def capture_video_thread(filename, duration=10, fps=20):
     out = cv2.VideoWriter(filename, fourcc, fps, (frame_width, frame_height))
 
     start_time = time.time()
-    total_frames = 0
+    global total_frames
 
     # Capture video for the specified duration
     while time.time() - start_time < duration:
@@ -74,6 +87,15 @@ def capture_video_thread(filename, duration=10, fps=20):
     camera.release()
     out.release()
     print(f"Video saved to {filename}. Total frames captured: {total_frames}")
+    return total_frames
+
+def calculate_blurriness(image):
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+    return laplacian_var
+
+# Thread function to capture video and store frames
+captured_frames = []  
 
 # Function to run both servo movement and video capture
 def run_servo_and_video():
@@ -91,5 +113,55 @@ def run_servo_and_video():
     # Wait for the video thread to complete
     video_thread.join()
 
+def find_least_blurry_image_in_range(n, m):
+    global captured_frames
+
+    if not captured_frames:
+        print("No frames captured.")
+        return None
+
+    if n < 0 or m > len(captured_frames) or n >= m:
+        print(f"Invalid range: n={n}, m={m}, total_frames={len(captured_frames)}")
+        return None
+
+    best_frame = None
+    lowest_blurriness = float('inf')
+
+    # Iterate through the specified range of frames to find the least blurry one
+    for i in range(n, m):
+        frame = captured_frames[i]
+        blurriness = calculate_blurriness(frame)
+        print(f"Frame {i + 1} blurriness: {blurriness}")
+
+        if blurriness < lowest_blurriness:
+            lowest_blurriness = blurriness
+            best_frame = frame
+
+    if best_frame is not None:
+        best_frame = sharpen_image(best_frame)
+        return best_frame
+        cv2.imwrite(f"least_blurry_image_n{n}_m{m}.jpg", best_frame)
+        print(f"Saved the least blurry image from frames {n} to {m} with blurriness {lowest_blurriness}")
+    else:
+        print(f"No valid frame to save from the range {n}:{m}.")
+
+
 # Example usage
+
+def find_n_image(n):
+    best_frames=[]
+    step = int(total_frames/n)
+    for i in range (0,total_frames,step):
+        best_frame= find_least_blurry_image_in_range(i, i+step)
+        best_frames.append(best_frame)
+    return best_frames
+
 run_servo_and_video()
+list_of_best_frames = find_n_image(5)
+
+stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
+status, panorama = stitcher.stitch(list_of_best_frames)
+if status == cv2.Stitcher_OK:
+    cv2.imwrite('panorama.jpg', panorama)
+else : 
+    print("woelah rek")

@@ -3,6 +3,7 @@ import time
 import threading
 import numpy as np
 import wiringpi
+import math
 
 # Thread function to capture video and store frames
 captured_frames = [] 
@@ -47,30 +48,40 @@ wiringpi.pinMode(PIN_TO_PWM, OUTPUT)
 wiringpi.softPwmCreate(PIN_TO_PWM, MIN_PULSE, 200)  # Range of 0-200 to adjust pulse
 
 # Function to move the servo
-def move_servo(current_angle, target_angle, increment=1, delay=0.05):
-    if current_angle < target_angle:
-        for a in range(current_angle, int(target_angle), increment):
-            pulse_width = MIN_PULSE + (a / 180) * (MAX_PULSE - MIN_PULSE)
-            wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
-            time.sleep(delay)
-    elif current_angle > target_angle:
-        for a in range(current_angle, int(target_angle), -increment):
-            pulse_width = MIN_PULSE + (a / 180) * (MAX_PULSE - MIN_PULSE)
-            wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
-            time.sleep(delay)
+def move_servo(current_angle, target_angle, steps=100, duration=5):
+    total_steps = steps
+    step_delay = duration / total_steps
+    
+    for i in range(total_steps + 1):
+        t = i / total_steps  # Progress from 0 to 1
+        smoothed_angle = current_angle + (target_angle - current_angle) * (1 - math.cos(t * math.pi)) / 2  # Smooth interpolation using cosine easing
+        
+        pulse_width = MIN_PULSE + (smoothed_angle / 180) * (MAX_PULSE - MIN_PULSE)
+        wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
+        time.sleep(step_delay)
+
+    # Ensure it reaches the exact target angle
+    pulse_width = MIN_PULSE + (target_angle / 180) * (MAX_PULSE - MIN_PULSE)
+    wiringpi.softPwmWrite(PIN_TO_PWM, int(pulse_width))
 
 # Thread function to capture video
 def capture_video_thread(filename, duration=10, fps=20):
     global captured_frames  
-    camera = cv2.VideoCapture(1)
-    if not camera.isOpened():
+    cap = cv2.VideoCapture(1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0.5)  # Value between 0 and 1
+    cap.set(cv2.CAP_PROP_CONTRAST, 0.5)
+    cap.set(cv2.CAP_PROP_SATURATION, 0.5)
+    cap.set(cv2.CAP_PROP_FPS, 30)
+    if not cap.isOpened():
         print("Error: Could not open camera.")
         return
 
     # Define the codec and create a VideoWriter object for MP4
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    frame_width = int(camera.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_height = int(camera.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     out = cv2.VideoWriter(filename, fourcc, fps, (frame_width, frame_height))
 
     start_time = time.time()
@@ -78,7 +89,7 @@ def capture_video_thread(filename, duration=10, fps=20):
 
     # Capture video for the specified duration
     while time.time() - start_time < duration:
-        ret, frame = camera.read()
+        ret, frame = cap.read()
         if ret:
             #frame = undistorter(frame)
             out.write(frame)
@@ -88,7 +99,7 @@ def capture_video_thread(filename, duration=10, fps=20):
         else:
             print("Failed to capture frame")
 
-    camera.release()
+    cap.release()
     out.release()
     print(f"Video saved to {filename}. Total frames captured: {total_frames}")
     return total_frames
@@ -111,7 +122,7 @@ def run_servo_and_video():
     # Move the servo while video is being captured
     current_angle = 0
     target_angle = 180  # Rotate from 0 to 180 degrees
-    move_servo(current_angle, target_angle, increment=1, delay=0.1)
+    move_servo(current_angle, target_angle, increment=30, delay=0.05)
 
     # Wait for the video thread to complete
     video_thread.join()
@@ -141,7 +152,7 @@ def find_least_blurry_image_in_range(n, m):
             best_frame = frame
 
     if best_frame is not None:
-        best_frame = sharpen_image(best_frame)
+#        best_frame = sharpen_image(best_frame)
         return best_frame
         cv2.imwrite(f"least_blurry_image_n{n}_m{m}.jpg", best_frame)
         print(f"Saved the least blurry image from frames {n} to {m} with blurriness {lowest_blurriness}")
@@ -157,6 +168,7 @@ def find_n_image(n):
     for i in range (0,total_frames,step):
         best_frame= find_least_blurry_image_in_range(i, i+step)
         best_frames.append(best_frame)
+        cv2.imwrite(f"{i}.jpg",best_frame)
     return best_frames
 
 run_servo_and_video()

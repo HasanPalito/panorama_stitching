@@ -4,6 +4,10 @@ import threading
 import numpy as np
 import wiringpi
 import math
+import brisque
+
+
+#pip install brisque  
 
 # Thread function to capture video and store frames
 captured_frames = [] 

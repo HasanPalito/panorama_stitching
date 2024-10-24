@@ -1,18 +1,14 @@
-import cv2
+from brisque import BRISQUE
+import numpy as np
+from PIL import Image
+import time
+img_path = "2.jpg"
+img = Image.open(img_path)
+ndarray = np.asarray(img)
 
-# Initialize the video capture object (0 is usually the default camera)
-cap = cv2.VideoCapture(1)
+obj = BRISQUE(url=False)
 
-# Check if the camera opened successfully
-if not cap.isOpened():
-    print("Error: Could not open camera.")
-else:
-    # Capture a single frame
-    ret, frame = cap.read()
-
-    if ret:
-        cv2.imwrite('captured_frame.png', frame)
-
-    # Release the video capture object
-    cap.release()
-    cv2.destroyAllWindows()
+a= time.time()
+obj.score(img=ndarray)
+b= time.time()
+print(obj.score(img=ndarray),)

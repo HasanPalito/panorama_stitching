@@ -4,6 +4,8 @@ import threading
 import numpy as np
 import wiringpi
 
+# Thread function to capture video and store frames
+captured_frames = [] 
 # Camera calibration parameters
 camera_matrix = np.array([[1.36173853e+03, 0.00000000e+00, 9.07939104e+02],
                           [0.00000000e+00, 1.35749773e+03, 5.49729293e+02],
@@ -59,6 +61,7 @@ def move_servo(current_angle, target_angle, increment=1, delay=0.05):
 
 # Thread function to capture video
 def capture_video_thread(filename, duration=10, fps=20):
+    global captured_frames  
     camera = cv2.VideoCapture(1)
     if not camera.isOpened():
         print("Error: Could not open camera.")
@@ -79,6 +82,7 @@ def capture_video_thread(filename, duration=10, fps=20):
         if ret:
             #frame = undistorter(frame)
             out.write(frame)
+            captured_frames.append(frame)          
             total_frames += 1
             print(f"Captured frame {total_frames}")
         else:
@@ -94,8 +98,7 @@ def calculate_blurriness(image):
     laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
     return laplacian_var
 
-# Thread function to capture video and store frames
-captured_frames = []  
+ 
 
 # Function to run both servo movement and video capture
 def run_servo_and_video():
